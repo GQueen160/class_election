@@ -6,4 +6,4 @@ A class election app where every student votes exactly once and the results show
 ![Before closing](screenshots/before.png)
 ![After running again](screenshots/after.png) 
 ![Live data from an API](screenshots/api.png) 
-![No internet](screenshots/no-internet.png)
+![No internet](screenshots/no_internet.png)
