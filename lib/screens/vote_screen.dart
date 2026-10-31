@@ -1,8 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../election.dart';
 import '../storage.dart';
 import 'candidates_screen.dart';
+import 'election_builder.dart';
 import 'results_screen.dart';
 import 'weather_strip.dart';
 
@@ -14,25 +16,7 @@ class VoteScreen extends StatefulWidget {
 }
 
 class _VoteScreenState extends State<VoteScreen> {
-  // The one Election object of the whole app. Other screens receive it.
-  final election = Election();
   final nameController = TextEditingController();
-  bool loading = true; // true until the saved election is read
-
-  @override
-  void initState() {
-    super.initState();
-    start();
-  }
-
-  // Part 2: read the saved election once when the app opens.
-  Future<void> start() async {
-    await loadElection(election);
-    if (!mounted) return;
-    setState(() {
-      loading = false;
-    });
-  }
 
   @override
   void dispose() {
@@ -46,51 +30,38 @@ class _VoteScreenState extends State<VoteScreen> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void castVote(Candidate candidate) {
-    final error = election.vote(nameController.text, candidate);
+  Future<void> castVote(Election election, Candidate candidate) async {
+    final error = election.checkVote(nameController.text);
     if (error != null) {
       showMessage(error);
       return; // refused: nothing changed
     }
     final voter = cleanName(nameController.text);
-    setState(() {
-      nameController.clear();
-    });
-    saveElection(election); // Part 2: save after every vote
-    showMessage('$voter voted. Thank you!');
+    nameController.clear();
+    try {
+      await saveVote(voter, candidate);
+      if (mounted) showMessage('$voter voted. Thank you!');
+    } catch (e) {
+      if (mounted) showMessage('Could not save the vote. $e');
+    }
   }
 
   void openResults() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => ResultsScreen(election: election),
-      ),
+      MaterialPageRoute(builder: (context) => const ResultsScreen()),
     );
   }
 
   void openCandidates() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => CandidatesScreen(election: election),
-      ),
-    ).then((_) {
-      // Candidates may have changed (or votes reset): redraw this screen.
-      setState(() {});
-    });
+      MaterialPageRoute(builder: (context) => const CandidatesScreen()),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final candidates = election.candidates;
-
-    if (loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ijwi · Class Election'),
@@ -104,6 +75,11 @@ class _VoteScreenState extends State<VoteScreen> {
             icon: const Icon(Icons.groups),
             tooltip: 'Candidates',
             onPressed: openCandidates,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Log out',
+            onPressed: () => FirebaseAuth.instance.signOut(),
           ),
         ],
       ),
@@ -124,37 +100,54 @@ class _VoteScreenState extends State<VoteScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Text(
-              'Votes so far: ${election.totalVotes}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
             Expanded(
-              child: candidates.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No candidates yet.\nAdd some on the Candidates screen.',
-                        textAlign: TextAlign.center,
+              child: ElectionBuilder(
+                builder: (context, election) {
+                  final candidates = election.candidates;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Votes so far: ${election.totalVotes}',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-                    )
-                  : ListView.builder(
-                      itemCount: candidates.length,
-                      itemBuilder: (context, index) {
-                        final candidate = candidates[index];
-                        return Card(
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              child: Text(candidate.name[0]),
-                            ),
-                            title: Text(candidate.name),
-                            trailing: FilledButton(
-                              onPressed: () => castVote(candidate),
-                              child: const Text('Vote'),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: candidates.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No candidates yet.\nAdd some on the Candidates screen.',
+                                  textAlign: TextAlign.center,
+                                ),
+                              )
+                            : ListView.builder(
+                                itemCount: candidates.length,
+                                itemBuilder: (context, index) {
+                                  final candidate = candidates[index];
+                                  return Card(
+                                    child: ListTile(
+                                      leading: CircleAvatar(
+                                        child: Text(
+                                          candidate.name.isEmpty
+                                              ? '?'
+                                              : candidate.name[0],
+                                        ),
+                                      ),
+                                      title: Text(candidate.name),
+                                      trailing: FilledButton(
+                                        onPressed: () =>
+                                            castVote(election, candidate),
+                                        child: const Text('Vote'),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ],
         ),

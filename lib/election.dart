@@ -1,22 +1,46 @@
 // The "brain" of the app: data + rules. No widgets in this file.
 
-class Candidate {
-  Candidate({required this.name, this.votes = 0});
+import 'package:cloud_firestore/cloud_firestore.dart';
 
+class Candidate {
+  Candidate({this.id = '', required this.name, this.votes = 0, this.createdAt});
+
+  final String id; // the Firestore document id
   final String name;
-  int votes; // not final: it goes up with every vote and back to 0 on reset
+  final int votes;
+  final Timestamp? createdAt;
 
   // ---- Saving: Candidate into a Map, and back ----
 
-  Map<String, dynamic> toJson() {
+  Map<String, dynamic> toMap() {
     return {'name': name, 'votes': votes};
   }
 
-  factory Candidate.fromJson(Map<String, dynamic> json) {
+  factory Candidate.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data()!;
+    final votes = data['votes'];
+    final createdAt = data['createdAt'];
     return Candidate(
-      name: json['name'] as String,
-      votes: (json['votes'] as num).toInt(),
+      id: doc.id,
+      name: '${data['name'] ?? ''}',
+      votes: votes is num ? votes.toInt() : 0, // a console edit can't crash us
+      createdAt: createdAt is Timestamp ? createdAt : null,
     );
+  }
+}
+
+class Voter {
+  Voter({this.id = '', required this.name});
+
+  final String id; // the Firestore document id
+  final String name;
+
+  Map<String, dynamic> toMap() {
+    return {'name': name};
+  }
+
+  factory Voter.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
+    return Voter(id: doc.id, name: '${doc.data()!['name'] ?? ''}');
   }
 }
 
@@ -30,82 +54,40 @@ String cleanName(String raw) {
       .join(' ');
 }
 
+/// Built again from the Firestore documents every time they change.
+/// Nothing computed here is ever saved.
 class Election {
-  final List<Candidate> candidates = [
-    Candidate(name: 'Keza Uwase'),
-    Candidate(name: 'Mutoni Aline'),
-    Candidate(name: 'Eric Nshuti'),
-  ];
+  Election({required this.candidates, required this.voters});
 
-  /// Cleaned names of everyone who has already voted.
-  final List<String> voters = [];
+  final List<Candidate> candidates;
+  final List<Voter> voters;
 
-  int get totalVotes => voters.length;
+  int get totalVotes => candidates.fold(0, (total, c) => total + c.votes);
 
-  // ---- Saving: the whole election into a Map, and back ----
+  // ---- Rules: each returns a message if refused, or null if allowed ----
 
-  Map<String, dynamic> toJson() {
-    return {
-      'candidates': candidates.map((c) => c.toJson()).toList(),
-      'voters': voters,
-    };
-  }
-
-  /// Replaces the sample data with the saved candidates, votes and voters.
-  void loadFromJson(Map<String, dynamic> json) {
-    final savedCandidates = json['candidates'] as List;
-    final savedVoters = json['voters'] as List;
-    candidates
-      ..clear()
-      ..addAll(
-        savedCandidates.map(
-          (x) => Candidate.fromJson(x as Map<String, dynamic>),
-        ),
-      );
-    voters
-      ..clear()
-      ..addAll(savedVoters.map((x) => x as String));
-  }
-
-  // ---- Rules: each returns a message if refused, or null if it worked ----
-
-  String? vote(String rawName, Candidate candidate) {
+  String? checkVote(String rawName) {
     final voter = cleanName(rawName); // clean BEFORE comparing
     if (voter.isEmpty) return 'Enter your name first';
-    if (voters.contains(voter)) return '$voter has already voted';
-    voters.add(voter);
-    candidate.votes++;
+    if (voters.any((v) => v.name == voter)) return '$voter has already voted';
     return null;
   }
 
-  String? addCandidate(String rawName) {
+  /// [editing] is the candidate being renamed: their own name is allowed.
+  String? checkCandidateName(String rawName, {Candidate? editing}) {
     final name = cleanName(rawName);
     if (name.isEmpty) return 'Candidate name cannot be empty';
-    if (candidates.any((c) => c.name == name)) {
+    if (candidates.any((c) => c.name == name && c.id != editing?.id)) {
       return '$name is already a candidate';
     }
-    candidates.add(Candidate(name: name));
     return null;
   }
 
-  String? removeCandidate(Candidate candidate) {
+  String? checkRemove(Candidate candidate) {
     if (candidate.votes > 0) {
       return '${candidate.name} has votes and cannot be removed';
     }
-    candidates.remove(candidate);
     return null;
-  }
-
-  /// Used by Undo: puts a removed candidate back in the same position.
-  void restoreCandidate(int position, Candidate candidate) {
-    candidates.insert(position, candidate);
-  }
-
-  void reset() {
-    voters.clear();
-    for (final c in candidates) {
-      c.votes = 0;
-    }
   }
 
   // ---- Results ----
