@@ -1,9 +1,9 @@
-Ijwi · Class Election
+# Ijwi · Class Election
 
-A class election app where every student votes exactly once and the results show the winner or a tie. Each user logs in and their data is saved in the cloud with Firebase, so nothing is lost when the app closes, and it shows today's weather in Kigali from the Open-Meteo API.
+A class election app where every student votes exactly once and the results show the winner or a tie. It signs users in with Firebase Authentication, and each user's data is saved in Cloud Firestore under their own id, so two accounts never see each other's data, and every change appears live.
 
 ## Screenshots
-![Before closing](screenshots/before.png)
-![After running again](screenshots/after.png) 
-![Live data from an API](screenshots/api.png) 
-![No internet](screenshots/no_internet.png)
+![Login](screenshots/login.png)
+![My data in Firestore](screenshots/console.png)
+![Live update](screenshots/live.png)
+![Second account sees nothing of mine](screenshots/denied.png)
